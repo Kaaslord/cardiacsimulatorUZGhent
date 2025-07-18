@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geavanceerde Cardiovasculaire Simulator (Stabiel & Functioneel)</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #1f2937; }
+        .axis-label { font-size: 12px; font-weight: 500; }
+        .main-title { font-size: 14px; font-weight: 600; }
+        .legend-text { font-size: 11px; }
+        .draggable-point { cursor: ew-resize; }
+        .btn { transition: all 0.2s ease-in-out; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .curve { transition: opacity 0.3s, stroke-width 0.3s; }
+        .fs-curve { stroke-width: 3px; }
+        .vr-curve { stroke-width: 3px; stroke-dasharray: 6, 4; }
+        .pv-curve { stroke-width: 2px; }
+        .pv-loop { fill-opacity: 0.2; stroke-width: 3px; }
+        .param-slider { width: 100%; }
+        .info-label { font-weight: 600; color: #475569; }
+        .info-value { font-weight: 500; color: #1e293b; }
+    </style>
+</head>
+<body class="bg-slate-50 flex items-center justify-center min-h-screen p-2 md:p-4">
+
+    <div class="bg-white rounded-2xl shadow-xl p-2 sm:p-4 lg:p-8 w-full max-w-7xl">
+        <div class="text-center mb-4">
+            <h1 class="text-xl sm:text-2xl md:text-3xl font-bold text-slate-800">Geavanceerde Cardiovasculaire Simulator</h1>
+            <p class="text-slate-500 mt-1 text-sm md:text-base">Stabiel model met Guyton/Starling evenwicht en PV-lus mechanica.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div id="chart-container" class="relative md:col-span-2"></div>
+            <div id="pv-chart-container" class="relative md:col-span-1"></div>
+        </div>
+        
+        <div class="mt-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <!-- Patient Profile -->
+            <div class="lg:col-span-4 bg-slate-50 p-3 rounded-lg">
+                <h3 class="font-bold text-slate-700 mb-2">Patiëntprofiel</h3>
+                <div class="grid grid-cols-2 gap-3 text-sm">
+                    <div><label for="age-input">Leeftijd</label><input type="number" id="age-input" value="65" class="w-full p-1 border rounded"></div>
+                    <div><label for="gender-select">Geslacht</label><select id="gender-select" class="w-full p-1 border rounded"><option value="Man">Man</option><option value="Vrouw">Vrouw</option></select></div>
+                    <div><label for="height-input">Lengte (cm)</label><input type="number" id="height-input" value="175" class="w-full p-1 border rounded"></div>
+                    <div><label for="weight-input">Gewicht (kg)</label><input type="number" id="weight-input" value="75" class="w-full p-1 border rounded"></div>
+                </div>
+            </div>
+            <!-- Hemodynamic State -->
+            <div class="lg:col-span-8 bg-slate-50 p-3 rounded-lg">
+                 <h3 class="font-bold text-slate-700 mb-2">Parameters</h3>
+                 <div class="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4 text-sm">
+                    <div><label for="contractility-select" class="font-medium">Contractiliteit</label><select id="contractility-select" class="w-full p-1.5 border rounded mt-1"></select></div>
+                    <div><label for="hr-slider" class="font-medium">Hartslag: <span id="hr-value" class="font-bold">70</span> bpm</label><input type="range" id="hr-slider" min="40" max="160" value="70" class="param-slider"></div>
+                    <div><label for="msfp-slider" class="font-medium">MSFP: <span id="msfp-value" class="font-bold">8.0</span> mmHg</label><input type="range" id="msfp-slider" min="4" max="20" step="0.2" value="8.0" class="param-slider"></div>
+                    <div><label for="rvr-slider" class="font-medium">RVR: <span id="rvr-value" class="font-bold">1.5</span></label><input type="range" id="rvr-slider" min="0.5" max="4" step="0.1" value="1.5" class="param-slider"></div>
+                    <div><label for="svri-slider" class="font-medium">SVRI: <span id="svri-value" class="font-bold">2000</span></label><input type="range" id="svri-slider" min="800" max="4000" step="50" value="2000" class="param-slider"></div>
+                    <div class="col-span-2">
+                        <label for="bolus-slider" class="font-medium">Vochtbolus: <span id="bolus-value" class="font-bold">500</span> ml</label>
+                        <div class="flex items-center gap-2">
+                           <input type="range" id="bolus-slider" min="0" max="2000" step="50" value="500" class="param-slider">
+                           <input type="number" id="bolus-input" min="0" max="2000" value="500" class="w-20 p-1 border rounded">
+                        </div>
+                    </div>
+                 </div>
+            </div>
+
+            <!-- Interventions -->
+            <div class="lg:col-span-12 bg-slate-50 p-3 rounded-lg mt-4">
+                <h3 class="font-bold text-slate-700 mb-2">Interventies</h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
+                     <div>
+                        <label for="norepi-slider" class="text-sm font-medium">Norepi: <span id="norepi-value">0.00</span> mcg/kg/min</label>
+                        <input type="range" id="norepi-slider" min="0" max="1.0" step="0.01" value="0" class="param-slider w-full mt-1">
+                    </div>
+                    <button id="fluid-challenge-btn" class="btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-3 rounded-lg text-sm w-full">Geef Bolus</button>
+                    <button id="toggle-sim-btn" class="btn bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-3 rounded-lg text-sm w-full">Start Simulatie</button>
+                    <button id="reset-btn" class="btn bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-lg text-sm w-full">Reset</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="info-box" role="status" aria-live="polite" aria-atomic="true" class="mt-4 text-slate-800 bg-slate-100 p-4 rounded-lg text-sm grid grid-cols-2 md:grid-cols-4 gap-2"></div>
+        
+        <p class="text-xs text-slate-400 text-center mt-4">Disclaimer: Dit is een educatief hulpmiddel en niet bedoeld voor directe klinische besluitvorming.</p>
+    </div>
+
+    <script>
+    document.addEventListener("DOMContentLoaded", () => {
+        // === 1. APP NAMESPACE & CONFIG ===
+        const App = {
+            config: {
+                preloadRange: [0, 25], ciRange: [0, 6], mapRange: [40, 160],
+                pvRangeV: [0, 250], pvRangeP: [0, 200],
+                venousCompliance: 100, // ml/mmHg
+                baseSvri: 2000, norepiSensitivity: 1500,
+                edpvr_a: 0.03, edpvr_b: 0.028, pv_v0: 10,
+                simStepGain: 0.3, simIntervalMs: 100
+            },
+            state: {
+                preload: 4, curveIdx: 1, hr: 70, svri: 2000,
+                msfp: 8.0, rvr: 1.5, bsa: 1.9,
+                get curve() { return App.contractilityParams[this.curveIdx]; },
+                get hemodynamics() { return App.methods.deriveHemodynamics(this); }
+            },
+            contractilityParams: [
+                { name: "Hyperdynamisch", Vmax: 5.0, Km: 3.0, color: "#10b981", ees: 3.5 },
+                { name: "Normaal", Vmax: 3.4, Km: 5.0, color: "#3b82f6", ees: 2.0 },
+                { name: "Matig Gestoord", Vmax: 2.1, Km: 8.0, color: "#ef4444", ees: 1.0 },
+                { name: "Cardiogene Shock", Vmax: 1.5, Km: 10.0, color: "#a855f7", ees: 0.5 },
+            ],
+            ui: {},
+            sim: { isRunning: false, interval: null },
+            methods: {}
+        };
+        const appState = App.state; // Define appState at a higher scope
+
+        // === 2. PHYSIOLOGICAL FUNCTIONS ===
+        App.methods.fsCI_base = (preload, p) => (p.Vmax * preload) / (p.Km + preload);
+        App.methods.vrCI = (preload, state) => Math.max(0, (state.msfp - preload) / state.rvr);
+        
+        App.methods.deriveHemodynamics = (state) => {
+            let ci_guess = 2.5; let map, co, sv, svi;
+            for (let i = 0; i < 5; i++) {
+                map = (ci_guess * state.bsa * 80 / state.svri) + state.preload;
+                map = Math.max(0, map);
+                const afterload_factor = 1 - (map / (App.config.mapRange[1] + 50));
+                const effective_vmax = state.curve.Vmax * Math.max(0.1, afterload_factor);
+                const afterload_adjusted_curve = { ...state.curve, Vmax: effective_vmax };
+                const new_ci_guess = App.methods.fsCI_base(state.preload, afterload_adjusted_curve);
+                ci_guess = 0.5 * ci_guess + 0.5 * new_ci_guess;
+            }
+            co = ci_guess * state.bsa;
+            sv = (co * 1000) / state.hr;
+            svi = sv / state.bsa;
+            return { ci: ci_guess, co, sv, svi, map };
+        };
+
+        App.methods.findEquilibriumPreload = (state) => {
+            let bestPreload = 0; let minDiff = Infinity;
+            for (let p = App.config.preloadRange[0]; p <= App.config.preloadRange[1]; p += 0.1) {
+                const tempState = { ...state, preload: p };
+                const ci_fs = App.methods.deriveHemodynamics(tempState).ci;
+                const ci_vr = App.methods.vrCI(p, state);
+                const diff = Math.abs(ci_fs - ci_vr);
+                if (diff < minDiff) { minDiff = diff; bestPreload = p; }
+            }
+            return bestPreload;
+        };
+
+        App.methods.classifyFluidResponse = (res) => {
+            const { dCI, pct } = res;
+            if (!isFinite(pct)) return { label: "Niet interpreteerbaar", color: "text-gray-500" };
+            const absOK = dCI >= 0.25;
+            const pctOK = pct >= 10;
+            if (pctOK || absOK) return { label: "Vochtresponsief", color: "text-green-600" };
+            return { label: "Niet-responsief", color: "text-red-600" };
+        };
+
+        function clampPreload(x) {
+            const [min, max] = App.config.preloadRange;
+            return Math.max(min, Math.min(max, x));
+        }
+
+        // === 3. D3 SETUP & RENDER FUNCTIONS ===
+        function setupCharts() {
+            // Main Chart
+            const container = d3.select("#chart-container");
+            const margin = { top: 30, right: 30, bottom: 40, left: 50 };
+            const width = container.node().getBoundingClientRect().width - margin.left - margin.right;
+            const height = 400 - margin.top - margin.bottom;
+            const svg = container.append("svg").attr("viewBox", `0 0 ${width + margin.left + margin.right} ${height + margin.top + margin.bottom}`).append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+            const xScale = d3.scaleLinear().domain(App.config.preloadRange).range([0, width]);
+            const yScale = d3.scaleLinear().domain(App.config.ciRange).range([height, 0]);
+            svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(xScale));
+            svg.append("g").call(d3.axisLeft(yScale));
+            svg.append("text").attr("class", "axis-label").attr("text-anchor", "middle").attr("x", width / 2).attr("y", height + 35).text("Preload (CVP, mmHg)");
+            svg.append("text").attr("class", "axis-label").attr("text-anchor", "middle").attr("transform", "rotate(-90)").attr("x", -height / 2).attr("y", -35).text("Cardiac Index (L/min/m²)");
+            svg.append("text").attr("class", "main-title").attr("x", width/2).attr("y", -10).attr("text-anchor", "middle").text("Guyton-Starling Circulatoir Evenwicht");
+            
+            const legend = svg.append("g").attr("transform", `translate(${width - 100}, 10)`);
+            legend.append("rect").attr("x", -10).attr("y", -10).attr("width", 110).attr("height", 55).attr("fill", "rgba(255,255,255,0.8)");
+            legend.append("line").attr("x1", 0).attr("x2", 20).attr("y1", 0).attr("y2", 0).attr("stroke", "#3b82f6").attr("stroke-width", 3);
+            legend.append("text").attr("x", 25).attr("y", 5).text("Hartfunctie").attr("class", "legend-text");
+            legend.append("line").attr("x1", 0).attr("x2", 20).attr("y1", 20).attr("y2", 20).attr("stroke", "#f97316").attr("stroke-width", 3).attr("stroke-dasharray", "6,4");
+            legend.append("text").attr("x", 25).attr("y", 25).text("Veneuze Terugstroom").attr("class", "legend-text");
+
+            App.ui.mainChart = { svg, xScale, yScale };
+            App.ui.mainChart.curvesData = App.contractilityParams.map(p => ({ ...p, points: d3.range(0, App.config.preloadRange[1] + 0.1, 0.1).map(preload => ({ x: preload, y: App.methods.fsCI_base(preload, p) })) }));
+            App.ui.mainChart.lineGenerator = d3.line().x(d => xScale(d.x)).y(d => yScale(d.y)).curve(d3.curveBasis);
+            App.ui.mainChart.curvePaths = svg.selectAll(".fs-curve").data(App.ui.mainChart.curvesData).enter().append("path").attr("class", "fs-curve curve").attr("d", d => App.ui.mainChart.lineGenerator(d.points)).attr("fill", "none").attr("stroke", d => d.color);
+            App.ui.mainChart.vrPath = svg.append("path").attr("class", "vr-curve curve").attr("fill", "none").attr("stroke", "#f97316");
+            App.ui.mainChart.equilibriumPoint = svg.append("circle").attr("r", 8).attr("fill", "white").attr("stroke-width", 3).attr("class", "draggable-point");
+            
+            // PV Loop chart
+            const pvContainer = d3.select("#pv-chart-container");
+            const pvMargin = { top: 30, right: 30, bottom: 40, left: 50 };
+            const pvWidth = pvContainer.node().getBoundingClientRect().width - pvMargin.left - pvMargin.right;
+            const pvHeight = 400 - pvMargin.top - pvMargin.bottom;
+            const svgPv = pvContainer.append("svg").attr("viewBox", `0 0 ${pvWidth + pvMargin.left + pvMargin.right} ${pvHeight + pvMargin.top + pvMargin.bottom}`).append("g").attr("transform", `translate(${pvMargin.left},${pvMargin.top})`);
+            const xScalePv = d3.scaleLinear().domain(App.config.pvRangeV).range([0, pvWidth]);
+            const yScalePv = d3.scaleLinear().domain(App.config.pvRangeP).range([pvHeight, 0]);
+            svgPv.append("g").attr("transform", `translate(0,${pvHeight})`).call(d3.axisBottom(xScalePv).ticks(5));
+            svgPv.append("g").call(d3.axisLeft(yScalePv).ticks(5));
+            svgPv.append("text").attr("class", "axis-label").attr("text-anchor", "middle").attr("x", pvWidth / 2).attr("y", pvHeight + 35).text("Volume (ml)");
+            svgPv.append("text").attr("class", "axis-label").attr("text-anchor", "middle").attr("transform", "rotate(-90)").attr("x", -pvHeight / 2).attr("y", -35).text("Druk (mmHg)");
+            svgPv.append("text").attr("class", "main-title").attr("x", pvWidth/2).attr("y", -10).attr("text-anchor", "middle").text("Druk-Volume Lus");
+            App.ui.pvChart = { svg: svgPv, xScale: xScalePv, yScale: yScalePv };
+            App.ui.pvChart.edpvrPath = svgPv.append("path").attr("fill", "none").attr("stroke", "#3b82f6").attr("stroke-width", 2).attr("class", "pv-curve");
+            App.ui.pvChart.espvrLine = svgPv.append("line").attr("stroke", "#ef4444").attr("stroke-width", 2).attr("class", "pv-curve");
+            App.ui.pvChart.pvLoopPath = svgPv.append("path").attr("fill", "#a855f7").attr("stroke", "#a855f7").attr("class", "pv-loop");
+        }
+
+        function fullUpdate() {
+            if (!App.sim.isRunning) {
+                appState.preload = App.methods.findEquilibriumPreload(appState);
+            }
+            const { ci, co, sv, svi, map } = appState.hemodynamics;
+            
+            App.ui.mainChart.equilibriumPoint.attr("cx", App.ui.mainChart.xScale(appState.preload)).attr("cy", App.ui.mainChart.yScale(ci)).attr("stroke", appState.curve.color);
+            const vrPoints = d3.range(0, App.config.preloadRange[1] + 0.1, 0.1).map(p => ({ x: p, y: App.methods.vrCI(p, appState) }));
+            App.ui.mainChart.vrPath.attr("d", App.ui.mainChart.lineGenerator(vrPoints));
+            highlightSelectedCurve();
+            updatePvLoop();
+            updateInfoBox({ ci, co, svi, map, preload: appState.preload, svri: appState.svri, msfp: appState.msfp });
+        }
+        
+        function updatePvLoop() {
+            const { sv } = appState.hemodynamics;
+            const edp = appState.preload;
+            const edv = Math.log(edp / App.config.edpvr_a + 1) / App.config.edpvr_b;
+            const esv = edv - sv;
+            const ees = appState.curve.ees;
+            const pv_v0 = App.config.pv_v0;
+            const espvrEndV = App.config.pvRangeV[1];
+            const espvrEndP = ees * (espvrEndV - pv_v0);
+            App.ui.pvChart.espvrLine.attr("x1", App.ui.pvChart.xScale(pv_v0)).attr("y1", App.ui.pvChart.yScale(0)).attr("x2", App.ui.pvChart.xScale(espvrEndV)).attr("y2", App.ui.pvChart.yScale(espvrEndP));
+            const edpvrPoints = d3.range(0, App.config.pvRangeV[1] + 1, 1).map(v => ({ v, p: App.config.edpvr_a * (Math.exp(App.config.edpvr_b * v) - 1) }));
+            const linePv = d3.line().x(d => App.ui.pvChart.xScale(d.v)).y(d => App.ui.pvChart.yScale(d.p)).curve(d3.curveBasis);
+            App.ui.pvChart.edpvrPath.attr("d", linePv(edpvrPoints));
+            const loopPoints = [];
+            for (let i = 0; i <= 10; i++) {
+                const v = esv + (edv - esv) * (i / 10);
+                const p = App.config.edpvr_a * (Math.exp(App.config.edpvr_b * v) - 1);
+                loopPoints.push({ v, p });
+            }
+            loopPoints.push({ v: edv, p: ees * (edv - pv_v0) });
+            loopPoints.push({ v: esv, p: ees * (esv - pv_v0) });
+            loopPoints.push({ v: esv, p: App.config.edpvr_a * (Math.exp(App.config.edpvr_b * esv) - 1) });
+            App.ui.pvChart.pvLoopPath.attr("d", linePv(loopPoints) + "Z");
+        }
+
+        function updateInfoBox(data, challengeResult = null) {
+            const infoBox = document.getElementById('info-box');
+            let html = `
+                <div><span class="info-label">MAP:</span> <span class="info-value">${data.map.toFixed(0)} mmHg</span></div>
+                <div><span class="info-label">CI:</span> <span class="info-value">${data.ci.toFixed(2)} L/min/m²</span></div>
+                <div><span class="info-label">Preload:</span> <span class="info-value">${data.preload.toFixed(1)} mmHg</span></div>
+                <div><span class="info-label">SVI:</span> <span class="info-value">${data.svi.toFixed(1)} ml/m²</span></div>
+                <div><span class="info-label">SVRI:</span> <span class="info-value">${data.svri.toFixed(0)}</span></div>
+                <div><span class="info-label">MSFP:</span> <span class="info-value">${data.msfp.toFixed(1)} mmHg</span></div>
+            `;
+            if (challengeResult) {
+                const cls = App.methods.classifyFluidResponse(challengeResult);
+                html += `<div class="col-span-full mt-2 pt-2 border-t border-slate-200"><span class="font-semibold text-blue-600">Resultaat Bolus: ΔCI ${challengeResult.dCI >= 0 ? '+' : ''}${challengeResult.dCI.toFixed(2)} (${challengeResult.pct.toFixed(0)}%).</span> <strong class="${cls.color}">${cls.label}</strong></div>`;
+            }
+            infoBox.innerHTML = html;
+        }
+        
+        function highlightSelectedCurve() {
+            App.ui.mainChart.curvePaths.attr("opacity", (d, i) => i === appState.curveIdx ? 1 : 0.3)
+                      .attr("stroke-width", (d, i) => i === appState.curveIdx ? 4 : 2);
+        }
+
+        function updateStep() {
+            if (App.sim.isRunning) {
+                const ci = appState.hemodynamics.ci;
+                const vr_ci = App.methods.vrCI(appState.preload, appState);
+                const d_preload = (vr_ci - ci) * App.config.simStepGain;
+                appState.preload = clampPreload(appState.preload + d_preload);
+            }
+            fullUpdate();
+        }
+
+        // === 6. EVENT HANDLERS & INITIALIZATION ===
+        function init() {
+            setupCharts();
+            const ui = App.ui;
+            const uiIds = ['contractility-select', 'hr-slider', 'hr-value', 'msfp-slider', 'msfp-value', 
+                           'rvr-slider', 'rvr-value', 'svri-slider', 'svri-value', 'norepi-slider', 'norepi-value',
+                           'bolus-select', 'bolus-slider', 'bolus-input', 'bolus-value', 'fluid-challenge-btn', 'reset-btn', 'toggle-sim-btn'];
+            uiIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    ui[id.replace(/-(\w)/g, (m, p1) => p1.toUpperCase())] = el;
+                }
+            });
+            ui.contractilitySelect = d3.select(ui.contractilitySelect);
+            ui.equilibriumPoint = App.ui.mainChart.equilibriumPoint;
+
+            ui.contractilitySelect.selectAll("option").data(App.contractilityParams).enter().append("option").attr("value", (d, i) => i).text(d => d.name);
+            
+            ui.contractilitySelect.on("change", function() {
+                appState.curveIdx = +this.value;
+                fullUpdate();
+            });
+            
+            ['hrSlider', 'msfpSlider', 'rvrSlider', 'svriSlider'].forEach(key => {
+                const valueKey = key.replace('Slider', 'Value');
+                const stateKey = key.replace('Slider', '');
+                ui[key].addEventListener('input', (e) => {
+                    appState[stateKey] = +e.target.value;
+                    ui[valueKey].textContent = appState[stateKey].toFixed(key === 'hrSlider' || key === 'svriSlider' ? 0 : 1);
+                    fullUpdate();
+                });
+            });
+
+            ui.bolusSlider.addEventListener('input', (e) => {
+                ui.bolusValue.textContent = e.target.value;
+                ui.bolusInput.value = e.target.value;
+            });
+            ui.bolusInput.addEventListener('change', (e) => {
+                ui.bolusSlider.value = e.target.value;
+                ui.bolusValue.textContent = e.target.value;
+            });
+
+            ui.norepiSlider.addEventListener('input', (e) => {
+                const dose = +e.target.value;
+                ui.norepiValue.textContent = dose.toFixed(2);
+                appState.svri = App.config.baseSvri + (dose * App.config.norepiSensitivity);
+                ui.svriSlider.value = appState.svri;
+                ui.svriValue.textContent = appState.svri.toFixed(0);
+                fullUpdate();
+            });
+
+            ui.fluidChallengeBtn.addEventListener('click', () => {
+                const bolusVolume = parseFloat(ui.bolusInput.value);
+                const bolusEffect = bolusVolume / App.config.venousCompliance;
+                const initialMSFP = appState.msfp;
+                const initialHemodynamics = appState.hemodynamics;
+
+                d3.transition().duration(1000).tween("msfp", () => {
+                    const i = d3.interpolate(initialMSFP, initialMSFP + bolusEffect);
+                    return (t) => {
+                        appState.msfp = i(t);
+                        ui.msfpSlider.value = appState.msfp;
+                        ui.msfpValue.textContent = appState.msfp.toFixed(1);
+                        fullUpdate();
+                    };
+                }).on("end", () => {
+                    const finalHemodynamics = appState.hemodynamics;
+                    const result = {
+                        dCI: finalHemodynamics.ci - initialHemodynamics.ci,
+                        pct: initialHemodynamics.ci > 0 ? ((finalHemodynamics.ci - initialHemodynamics.ci) / initialHemodynamics.ci) * 100 : 0
+                    };
+                    updateInfoBox(finalHemodynamics, result);
+                });
+            });
+            
+            ui.toggleSimBtn.addEventListener('click', () => {
+                App.sim.isRunning = !App.sim.isRunning;
+                if (App.sim.isRunning) {
+                    App.sim.interval = setInterval(updateStep, App.config.simIntervalMs);
+                    ui.toggleSimBtn.textContent = "Pauze";
+                    ui.toggleSimBtn.classList.replace("bg-green-600", "bg-yellow-500");
+                } else {
+                    clearInterval(App.sim.interval);
+                    ui.toggleSimBtn.textContent = "Start Simulatie";
+                    ui.toggleSimBtn.classList.replace("bg-yellow-500", "bg-green-600");
+                }
+            });
+
+            ui.resetBtn.addEventListener('click', () => {
+                if(App.sim.isRunning) { clearInterval(App.sim.interval); App.sim.isRunning = false; ui.toggleSimBtn.textContent = "Start Simulatie"; }
+                Object.assign(appState, {
+                    preload: 4, curveIdx: 1, hr: 70, svri: 2000,
+                    msfp: 8.0, rvr: 1.5,
+                });
+                
+                ui.contractilitySelect.property("value", appState.curveIdx);
+                ui.hrSlider.value = appState.hr;
+                ui.hrValue.textContent = appState.hr;
+                ui.msfpSlider.value = appState.msfp;
+                ui.msfpValue.textContent = appState.msfp.toFixed(1);
+                ui.rvrSlider.value = appState.rvr;
+                ui.rvrValue.textContent = appState.rvr.toFixed(1);
+                ui.svriSlider.value = appState.svri;
+                ui.svriValue.textContent = appState.svri;
+                ui.norepiSlider.value = 0;
+                ui.norepiValue.textContent = "0.00";
+                ui.bolusSlider.value = 500;
+                ui.bolusInput.value = 500;
+                ui.bolusValue.textContent = 500;
+                
+                fullUpdate();
+            });
+
+            // Initial render
+            ui.contractilitySelect.property("value", appState.curveIdx);
+            fullUpdate();
+        }
+
+        init();
+    });
+    </script>
+</body>
+</html>
